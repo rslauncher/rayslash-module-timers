@@ -722,6 +722,23 @@ pub mod rayslash {
                     result16
                 }
             }
+            #[allow(unused_unsafe, clippy::all)]
+            pub fn unix_time() -> u64 {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "rayslash:module/host@1.0.0")]
+                    unsafe extern "C" {
+                        #[link_name = "unix-time"]
+                        fn wit_import0() -> i64;
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0() -> i64 {
+                        unreachable!()
+                    }
+                    let ret = unsafe { wit_import0() };
+                    ret as u64
+                }
+            }
         }
     }
 }
@@ -1588,13 +1605,11 @@ macro_rules! __export_module_impl {
 #[doc(inline)]
 pub(crate) use __export_module_impl as export;
 #[cfg(target_arch = "wasm32")]
-#[unsafe(
-    link_section = "component-type:wit-bindgen:0.41.0:rayslash:module@1.0.0:module:encoded world"
-)]
+#[unsafe(link_section = "component-type:wit-bindgen:0.41.0:rayslash:module@1.0.0:module:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1118] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xe1\x07\x01A\x02\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 1137] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xf4\x07\x01A\x02\x01\
 A\x09\x01B\x13\x01ks\x01r\x04\x05querys\x0bmax-resultsy\x06locale\0\x0dsettings-\
 jsons\x04\0\x0dquery-context\x03\0\x01\x01q\x03\x0cpackage-path\x01s\0\x04text\x01\
 s\0\x04none\0\0\x04\0\x04icon\x03\0\x03\x01o\x02ss\x01ps\x01o\x03wss\x01o\x02w\x06\
@@ -1605,20 +1620,21 @@ tification\x01\x07\0\x10schedule-command\x01\x08\0\x04none\0\0\x04\0\x06action\x
 action\x0a\x04\0\x0bresult-item\x03\0\x0c\x01p\x0d\x01r\x02\x07results\x0e\x09ex\
 clusive\x7f\x04\0\x0equery-response\x03\0\x0f\x01q\x03\x0dinvalid-query\x01s\0\x0b\
 unavailable\x01s\0\x08internal\x01s\0\x04\0\x0cmodule-error\x03\0\x11\x03\0\x1br\
-ayslash:module/types@1.0.0\x05\0\x02\x03\0\0\x0cmodule-error\x01B\x13\x02\x03\x02\
+ayslash:module/types@1.0.0\x05\0\x02\x03\0\0\x0cmodule-error\x01B\x15\x02\x03\x02\
 \x01\x01\x04\0\x0cmodule-error\x03\0\0\x01o\x02ss\x01p\x02\x01p}\x01r\x04\x06met\
 hods\x03urls\x07headers\x03\x04body\x04\x04\0\x0chttp-request\x03\0\x05\x01r\x03\
 \x06status{\x07headers\x03\x04body\x04\x04\0\x0dhttp-response\x03\0\x07\x01j\x01\
 \x08\x01\x01\x01@\x01\x07request\x06\0\x09\x04\0\x07request\x01\x0a\x01k\x04\x01\
 j\x01\x0b\x01\x01\x01@\x01\x03keys\0\x0c\x04\0\x09cache-get\x01\x0d\x01j\0\x01\x01\
-\x01@\x02\x03keys\x05value\x04\0\x0e\x04\0\x09cache-put\x01\x0f\x03\0\x1arayslas\
-h:module/host@1.0.0\x05\x02\x02\x03\0\0\x0dquery-context\x02\x03\0\0\x0equery-re\
-sponse\x01B\x09\x02\x03\x02\x01\x01\x04\0\x0cmodule-error\x03\0\0\x02\x03\x02\x01\
-\x03\x04\0\x0dquery-context\x03\0\x02\x02\x03\x02\x01\x04\x04\0\x0equery-respons\
-e\x03\0\x04\x01j\x01\x05\x01\x01\x01@\x01\x07context\x03\0\x06\x04\0\x05query\x01\
-\x07\x04\0\x1erayslash:module/provider@1.0.0\x05\x05\x04\0\x1crayslash:module/mo\
-dule@1.0.0\x04\0\x0b\x0c\x01\0\x06module\x03\0\0\0G\x09producers\x01\x0cprocesse\
-d-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\x01@\x02\x03keys\x05value\x04\0\x0e\x04\0\x09cache-put\x01\x0f\x01@\0\0w\x04\0\x09\
+unix-time\x01\x10\x03\0\x1arayslash:module/host@1.0.0\x05\x02\x02\x03\0\0\x0dque\
+ry-context\x02\x03\0\0\x0equery-response\x01B\x09\x02\x03\x02\x01\x01\x04\0\x0cm\
+odule-error\x03\0\0\x02\x03\x02\x01\x03\x04\0\x0dquery-context\x03\0\x02\x02\x03\
+\x02\x01\x04\x04\0\x0equery-response\x03\0\x04\x01j\x01\x05\x01\x01\x01@\x01\x07\
+context\x03\0\x06\x04\0\x05query\x01\x07\x04\0\x1erayslash:module/provider@1.0.0\
+\x05\x05\x04\0\x1crayslash:module/module@1.0.0\x04\0\x0b\x0c\x01\0\x06module\x03\
+\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-\
+bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
