@@ -16,6 +16,7 @@ interface host {
     request: func(request: http-request) -> result<http-response, module-error>;
     cache-get: func(key: string) -> result<option<list<u8>>, module-error>;
     cache-put: func(key: string, value: list<u8>) -> result<_, module-error>;
+    unix-time: func() -> u64;
 }
 
 interface provider {

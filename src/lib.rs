@@ -25,7 +25,8 @@ impl Guest for Component {
 
 fn parse(input: &str) -> Option<ResultItem> {
     let lower = input.to_ascii_lowercase();
-    if let Some(rest) = lower.strip_prefix("timer ") {
+    if lower.starts_with("timer ") {
+        let rest = &input["timer ".len()..];
         let (duration, message) = duration_and_message(rest)?;
         let message = if message.is_empty() {
             "Timer finished"
@@ -40,7 +41,8 @@ fn parse(input: &str) -> Option<ResultItem> {
             Action::ScheduleNotification((duration, "rayslash timer".into(), message.into())),
         ));
     }
-    if let Some(rest) = lower.strip_prefix("reminder in ") {
+    if lower.starts_with("reminder in ") {
+        let rest = &input["reminder in ".len()..];
         let (duration, message) = duration_and_message(rest)?;
         let message = message.strip_prefix("to ").unwrap_or(message);
         if message.is_empty() {
@@ -98,7 +100,8 @@ fn duration_and_message(value: &str) -> Option<(u64, &str)> {
 fn parse_duration(value: &str) -> Option<u64> {
     let split = value.find(|ch: char| !ch.is_ascii_digit())?;
     let amount = value[..split].parse::<u64>().ok()?;
-    let multiplier = match value[split..].trim() {
+    let unit = value[split..].trim().to_ascii_lowercase();
+    let multiplier = match unit.as_str() {
         "s" | "sec" | "secs" | "second" | "seconds" => 1,
         "m" | "min" | "mins" | "minute" | "minutes" => 60,
         "h" | "hr" | "hour" | "hours" => 3600,
@@ -133,9 +136,10 @@ mod tests {
     use super::*;
     #[test]
     fn parses_timer() {
+        let item = parse("timer 10MIN Take a Break").unwrap();
         assert!(matches!(
-            parse("timer 10min break").unwrap().action,
-            Action::ScheduleNotification((600, _, _))
+            item.action,
+            Action::ScheduleNotification((600, _, ref message)) if message == "Take a Break"
         ));
     }
     #[test]
