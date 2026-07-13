@@ -2,6 +2,8 @@
 
 Official rayslash module for timers, reminders, reboot, shutdown, logout, and lock actions. Every action is typed, scheduled by the launcher, and requires explicit activation. No shell is used.
 
+Build the release component with `./scripts/build-release.sh`. The script formats regenerated bindings with the pinned Rust 1.92.0 toolchain and verifies that generation leaves `src/bindings.rs` unchanged.
+
 Examples:
 
 ```text
