@@ -37,7 +37,6 @@ fn parse(input: &str) -> Option<ResultItem> {
             input,
             "Timer",
             format!("Timer in {}", describe(duration)),
-            "T",
             Action::ScheduleNotification((duration, "rayslash timer".into(), message.into())),
         ));
     }
@@ -57,7 +56,6 @@ fn parse(input: &str) -> Option<ResultItem> {
             input,
             "Reminder",
             format!("Reminder in {}", describe(duration)),
-            "R",
             Action::ScheduleNotification((duration, "rayslash reminder".into(), message.into())),
         ));
     }
@@ -77,7 +75,6 @@ fn parse(input: &str) -> Option<ResultItem> {
             input,
             "Reminder",
             format!("Reminder in {}", describe(duration)),
-            "R",
             Action::ScheduleNotification((
                 duration,
                 "rayslash reminder".into(),
@@ -113,7 +110,6 @@ fn parse(input: &str) -> Option<ResultItem> {
                 input,
                 title,
                 subtitle,
-                "!",
                 Action::ScheduleCommand((delay, args)),
             ));
         }
@@ -185,12 +181,12 @@ fn describe(seconds: u64) -> String {
         format!("{seconds}s")
     }
 }
-fn item(input: &str, title: &str, subtitle: String, icon: &str, action: Action) -> ResultItem {
+fn item(input: &str, title: &str, subtitle: String, action: Action) -> ResultItem {
     ResultItem {
         id: format!("timers:{}", input.to_ascii_lowercase()),
         title: title.into(),
         subtitle,
-        icon: Icon::Text(icon.into()),
+        icon: Icon::PackagePath("icon.svg".into()),
         score: None,
         action,
     }
