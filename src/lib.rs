@@ -42,7 +42,7 @@ fn parse(input: &str) -> Option<ResultItem> {
             input,
             &title,
             format!("Timer in {}", describe(duration)),
-            Action::ScheduleNotification((duration, "rayslash timer".into(), notification.into())),
+            Action::ScheduleNotification((duration, "Timer finished".into(), notification.into())),
         ));
     }
     if lower.starts_with("reminder in ")
@@ -68,7 +68,7 @@ fn parse(input: &str) -> Option<ResultItem> {
             input,
             &title,
             format!("Reminder in {}", describe(duration)),
-            Action::ScheduleNotification((duration, "rayslash reminder".into(), message.into())),
+            Action::ScheduleNotification((duration, "Reminder".into(), message.into())),
         ));
     }
     if lower.starts_with("remind me to ") || lower.starts_with("remind to ") {
@@ -89,7 +89,7 @@ fn parse(input: &str) -> Option<ResultItem> {
             input,
             &title,
             format!("Reminder in {}", describe(duration)),
-            Action::ScheduleNotification((duration, "rayslash reminder".into(), message)),
+            Action::ScheduleNotification((duration, "Reminder".into(), message)),
         ));
     }
     let actions = [
@@ -232,25 +232,25 @@ fn parse_duration_prefix(value: &str) -> Option<(u64, usize)> {
         let separated_unit_len = after_space
             .find(|character: char| !character.is_ascii_alphabetic())
             .unwrap_or(after_space.len());
-        if whitespace > 0 && separated_unit_len > 0 {
-            (
-                &after_space[..separated_unit_len],
-                digits + whitespace + separated_unit_len,
-            )
+        let separated_unit = &after_space[..separated_unit_len];
+        if whitespace > 0 && duration_multiplier(separated_unit).is_some() {
+            (separated_unit, digits + whitespace + separated_unit_len)
         } else {
             ("s", digits)
         }
     };
-    let unit = unit.to_ascii_lowercase();
-    let multiplier = match unit.as_str() {
+    let multiplier = duration_multiplier(unit)?;
+    amount
+        .checked_mul(multiplier)
+        .map(|seconds| (seconds, leading + consumed))
+}
+fn duration_multiplier(unit: &str) -> Option<u64> {
+    Some(match unit.to_ascii_lowercase().as_str() {
         "s" | "sec" | "secs" | "second" | "seconds" => 1,
         "m" | "min" | "mins" | "minute" | "minutes" => 60,
         "h" | "hr" | "hrs" | "hour" | "hours" => 3600,
         _ => return None,
-    };
-    amount
-        .checked_mul(multiplier)
-        .map(|seconds| (seconds, leading + consumed))
+    })
 }
 fn describe(seconds: u64) -> String {
     if seconds.is_multiple_of(3600) {
@@ -282,7 +282,8 @@ mod tests {
         let item = parse("timer 10MIN Take a Break").unwrap();
         assert!(matches!(
             item.action,
-            Action::ScheduleNotification((600, _, ref message)) if message == "Take a Break"
+            Action::ScheduleNotification((600, ref title, ref message))
+                if title == "Timer finished" && message == "Take a Break"
         ));
     }
     #[test]
@@ -356,7 +357,8 @@ mod tests {
         ));
         assert!(matches!(
             parse("remind me to feed the cat in 10 minutes").unwrap().action,
-            Action::ScheduleNotification((600, _, ref message)) if message == "feed the cat"
+            Action::ScheduleNotification((600, ref title, ref message))
+                if title == "Reminder" && message == "feed the cat"
         ));
         assert!(matches!(
             parse("remind in 10min to feed the cat").unwrap().action,
@@ -365,6 +367,10 @@ mod tests {
         assert!(matches!(
             parse("remind me in 10min to feed the cat").unwrap().action,
             Action::ScheduleNotification((600, _, ref message)) if message == "feed the cat"
+        ));
+        assert!(matches!(
+            parse("remind me in 30 to feed the cat").unwrap().action,
+            Action::ScheduleNotification((30, _, ref message)) if message == "feed the cat"
         ));
         assert!(matches!(
             parse("timer in 35s feed the cat").unwrap().action,
