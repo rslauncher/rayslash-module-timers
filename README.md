@@ -10,6 +10,7 @@ Examples:
 timer 10min take a break
 timer take a break 10min
 remind me to take a break in 10 minutes
+remind me in 10min to take a break
 remind in 10min to take a break
 shutdown in 10min
 ```

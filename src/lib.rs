@@ -27,34 +27,46 @@ fn parse(input: &str) -> Option<ResultItem> {
     let lower = input.to_ascii_lowercase();
     if lower.starts_with("timer ") {
         let rest = &input["timer ".len()..];
-        let (duration, message) = timer_parts(rest)?;
-        let message = if message.is_empty() {
+        let (duration, message) = timed_message(rest);
+        let notification = if message.is_empty() {
             "Timer finished"
         } else {
-            message
+            message.as_str()
+        };
+        let title = if message.is_empty() {
+            "Timer".to_owned()
+        } else {
+            format!("Timer: {message}")
         };
         return Some(item(
             input,
-            "Timer",
+            &title,
             format!("Timer in {}", describe(duration)),
-            Action::ScheduleNotification((duration, "rayslash timer".into(), message.into())),
+            Action::ScheduleNotification((duration, "rayslash timer".into(), notification.into())),
         ));
     }
-    if lower.starts_with("reminder in ") || lower.starts_with("remind in ") {
+    if lower.starts_with("reminder in ")
+        || lower.starts_with("remind me in ")
+        || lower.starts_with("remind in ")
+    {
         let prefix = if lower.starts_with("reminder in ") {
             "reminder in "
+        } else if lower.starts_with("remind me in ") {
+            "remind me in "
         } else {
             "remind in "
         };
         let rest = &input[prefix.len()..];
-        let (duration, message) = duration_and_message(rest)?;
+        let (duration, consumed) = parse_duration_prefix(rest)?;
+        let message = rest[consumed..].trim();
         let message = strip_ascii_prefix(message, "to ").unwrap_or(message);
         if message.is_empty() {
             return None;
         }
+        let title = format!("Reminder: {message}");
         return Some(item(
             input,
-            "Reminder",
+            &title,
             format!("Reminder in {}", describe(duration)),
             Action::ScheduleNotification((duration, "rayslash reminder".into(), message.into())),
         ));
@@ -66,46 +78,44 @@ fn parse(input: &str) -> Option<ResultItem> {
             "remind to "
         };
         let rest = &input[prefix.len()..];
-        let (message, duration_text) = split_ascii_once_from_end(rest, " in ")?;
-        let duration = parse_duration(duration_text.trim())?;
-        if message.trim().is_empty() {
+        let (duration, message) = trailing_duration(rest)
+            .map(|(duration, message)| (duration, message.to_owned()))
+            .unwrap_or_else(|| (30, rest.trim().to_owned()));
+        if message.is_empty() {
             return None;
         }
+        let title = format!("Reminder: {message}");
         return Some(item(
             input,
-            "Reminder",
+            &title,
             format!("Reminder in {}", describe(duration)),
-            Action::ScheduleNotification((
-                duration,
-                "rayslash reminder".into(),
-                message.trim().into(),
-            )),
+            Action::ScheduleNotification((duration, "rayslash reminder".into(), message)),
         ));
     }
     let actions = [
         ("reboot", "Reboot", vec!["systemctl", "reboot"]),
         ("restart", "Reboot", vec!["systemctl", "reboot"]),
         ("shutdown", "Shut down", vec!["systemctl", "poweroff"]),
+        ("shut down", "Shut down", vec!["systemctl", "poweroff"]),
+        ("turn off", "Shut down", vec!["systemctl", "poweroff"]),
         ("poweroff", "Shut down", vec!["systemctl", "poweroff"]),
-        (
-            "logout",
-            "Log out",
-            vec!["loginctl", "terminate-session", "self"],
-        ),
-        ("lock", "Lock", vec!["loginctl", "lock-session", "self"]),
+        ("logout", "Log out", vec!["gnome-session-quit", "--logout"]),
+        ("log out", "Log out", vec!["gnome-session-quit", "--logout"]),
+        ("lock", "Lock", vec!["loginctl", "lock-sessions"]),
     ];
-    for (prefix, title, command) in actions {
-        if lower == prefix || lower.starts_with(&format!("{prefix} in ")) {
-            let delay = lower
-                .strip_prefix(&format!("{prefix} in "))
-                .and_then(parse_duration)
-                .unwrap_or(0);
-            let args = command.into_iter().map(str::to_owned).collect::<Vec<_>>();
-            let subtitle = if delay == 0 {
-                format!("{title} now")
+    for (prefix, title, command) in &actions {
+        if lower == *prefix || lower.starts_with(&format!("{prefix} in ")) {
+            let delay = if lower == *prefix {
+                30
             } else {
-                format!("{title} in {}", describe(delay))
+                let duration = input[prefix.len() + " in ".len()..].trim();
+                parse_duration_exact(duration)?
             };
+            let args = command
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect::<Vec<_>>();
+            let subtitle = format!("{title} in {}", describe(delay));
             return Some(item(
                 input,
                 title,
@@ -114,29 +124,54 @@ fn parse(input: &str) -> Option<ResultItem> {
             ));
         }
     }
+
+    if lower.len() >= 3 {
+        let mut matches = actions
+            .iter()
+            .filter(|(prefix, _, _)| prefix.starts_with(&lower));
+        let (_, title, command) = matches.next()?;
+        if matches.all(|(_, candidate_title, _)| candidate_title == title) {
+            return Some(item(
+                input,
+                title,
+                format!("{title} in 30s"),
+                Action::ScheduleCommand((
+                    30,
+                    command
+                        .iter()
+                        .map(|value| (*value).to_owned())
+                        .collect::<Vec<_>>(),
+                )),
+            ));
+        }
+    }
     None
 }
 
-fn duration_and_message(value: &str) -> Option<(u64, &str)> {
-    let mut parts = value.splitn(2, char::is_whitespace);
-    let duration = parse_duration(parts.next()?)?;
-    Some((duration, parts.next().unwrap_or("").trim()))
-}
-fn timer_parts(value: &str) -> Option<(u64, &str)> {
+fn timed_message(value: &str) -> (u64, String) {
     let value = value.trim();
     if value.is_empty() {
-        return None;
+        return (30, String::new());
     }
-    for (start, token) in word_offsets(value) {
-        if let Some(duration) = parse_duration(token) {
-            let end = start + token.len();
-            let before = value[..start].trim();
+    for (start, _) in word_offsets(value) {
+        if let Some((duration, consumed)) = parse_duration_prefix(&value[start..]) {
+            let end = start + consumed;
+            let before = value[..start].trim().trim_end();
+            let before = if before.eq_ignore_ascii_case("in") {
+                ""
+            } else {
+                strip_ascii_suffix(before, " in").unwrap_or(before).trim()
+            };
             let after = value[end..].trim();
-            let message = if before.is_empty() { after } else { before };
-            return Some((duration, message));
+            let message = [before, after]
+                .into_iter()
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            return (duration, message);
         }
     }
-    Some((30, value))
+    (30, value.to_owned())
 }
 fn word_offsets(value: &str) -> impl Iterator<Item = (usize, &str)> {
     value
@@ -155,22 +190,67 @@ fn strip_ascii_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
         .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
         .then(|| &value[prefix.len()..])
 }
-fn split_ascii_once_from_end<'a>(value: &'a str, delimiter: &str) -> Option<(&'a str, &'a str)> {
-    let lower = value.to_ascii_lowercase();
-    let index = lower.rfind(delimiter)?;
-    Some((&value[..index], &value[index + delimiter.len()..]))
+fn strip_ascii_suffix<'a>(value: &'a str, suffix: &str) -> Option<&'a str> {
+    value
+        .get(value.len().checked_sub(suffix.len())?..)
+        .is_some_and(|tail| tail.eq_ignore_ascii_case(suffix))
+        .then(|| &value[..value.len() - suffix.len()])
 }
-fn parse_duration(value: &str) -> Option<u64> {
-    let split = value.find(|ch: char| !ch.is_ascii_digit())?;
-    let amount = value[..split].parse::<u64>().ok()?;
-    let unit = value[split..].trim().to_ascii_lowercase();
+fn trailing_duration(value: &str) -> Option<(u64, &str)> {
+    let lower = value.to_ascii_lowercase();
+    let index = lower.rfind(" in ")?;
+    let duration = parse_duration_exact(value[index + " in ".len()..].trim())?;
+    Some((duration, value[..index].trim()))
+}
+fn parse_duration_exact(value: &str) -> Option<u64> {
+    let value = value.trim();
+    let (seconds, consumed) = parse_duration_prefix(value)?;
+    (value[consumed..].trim().is_empty()).then_some(seconds)
+}
+fn parse_duration_prefix(value: &str) -> Option<(u64, usize)> {
+    let leading = value.len() - value.trim_start().len();
+    let value = &value[leading..];
+    let digits = value
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(value.len());
+    if digits == 0 {
+        return None;
+    }
+    let amount = value[..digits].parse::<u64>().ok()?;
+    let after_digits = &value[digits..];
+    let attached_unit_len = after_digits
+        .find(|character: char| !character.is_ascii_alphabetic())
+        .unwrap_or(after_digits.len());
+    let (unit, consumed) = if attached_unit_len > 0 {
+        (
+            &after_digits[..attached_unit_len],
+            digits + attached_unit_len,
+        )
+    } else {
+        let whitespace = after_digits.len() - after_digits.trim_start().len();
+        let after_space = &after_digits[whitespace..];
+        let separated_unit_len = after_space
+            .find(|character: char| !character.is_ascii_alphabetic())
+            .unwrap_or(after_space.len());
+        if whitespace > 0 && separated_unit_len > 0 {
+            (
+                &after_space[..separated_unit_len],
+                digits + whitespace + separated_unit_len,
+            )
+        } else {
+            ("s", digits)
+        }
+    };
+    let unit = unit.to_ascii_lowercase();
     let multiplier = match unit.as_str() {
         "s" | "sec" | "secs" | "second" | "seconds" => 1,
         "m" | "min" | "mins" | "minute" | "minutes" => 60,
-        "h" | "hr" | "hour" | "hours" => 3600,
+        "h" | "hr" | "hrs" | "hour" | "hours" => 3600,
         _ => return None,
     };
-    amount.checked_mul(multiplier)
+    amount
+        .checked_mul(multiplier)
+        .map(|seconds| (seconds, leading + consumed))
 }
 fn describe(seconds: u64) -> String {
     if seconds.is_multiple_of(3600) {
@@ -207,9 +287,65 @@ mod tests {
     }
     #[test]
     fn parses_delayed_shutdown() {
+        for query in [
+            "shutdown in 35",
+            "shutdown in 35s",
+            "shutdown in 35 sec",
+            "shutdown in 35 seconds",
+        ] {
+            assert!(matches!(
+                parse(query).unwrap().action,
+                Action::ScheduleCommand((35, _))
+            ));
+        }
+        for query in [
+            "shutdown in 5m",
+            "shutdown in 5min",
+            "shutdown in 5 min",
+            "shutdown in 5 minutes",
+        ] {
+            assert!(matches!(
+                parse(query).unwrap().action,
+                Action::ScheduleCommand((300, _))
+            ));
+        }
+    }
+    #[test]
+    fn parses_natural_shutdown_aliases() {
+        for query in ["turn off", "shut down", "turn off in 5min"] {
+            let item = parse(query).unwrap();
+            assert_eq!(item.title, "Shut down");
+            assert!(matches!(item.action, Action::ScheduleCommand((_, _))));
+        }
+    }
+    #[test]
+    fn suggests_unambiguous_actions_before_the_full_term() {
+        for (query, title) in [
+            ("reb", "Reboot"),
+            ("loc", "Lock"),
+            ("log", "Log out"),
+            ("shut", "Shut down"),
+        ] {
+            assert_eq!(parse(query).unwrap().title, title);
+        }
+        assert!(parse("lo").is_none());
+    }
+    #[test]
+    fn parses_spaced_logout_alias() {
+        let item = parse("log out").unwrap();
+        assert_eq!(item.title, "Log out");
         assert!(matches!(
-            parse("shutdown in 5min").unwrap().action,
-            Action::ScheduleCommand((300, _))
+            item.action,
+            Action::ScheduleCommand((30, ref command))
+                if command == &["gnome-session-quit", "--logout"]
+        ));
+    }
+    #[test]
+    fn lock_targets_the_graphical_sessions_from_a_background_service() {
+        assert!(matches!(
+            parse("lock").unwrap().action,
+            Action::ScheduleCommand((30, ref command))
+                if command == &["loginctl", "lock-sessions"]
         ));
     }
     #[test]
@@ -226,6 +362,22 @@ mod tests {
             parse("remind in 10min to feed the cat").unwrap().action,
             Action::ScheduleNotification((600, _, ref message)) if message == "feed the cat"
         ));
+        assert!(matches!(
+            parse("remind me in 10min to feed the cat").unwrap().action,
+            Action::ScheduleNotification((600, _, ref message)) if message == "feed the cat"
+        ));
+        assert!(matches!(
+            parse("timer in 35s feed the cat").unwrap().action,
+            Action::ScheduleNotification((35, _, ref message)) if message == "feed the cat"
+        ));
+        assert!(matches!(
+            parse("remind me to feed the cat").unwrap().action,
+            Action::ScheduleNotification((30, _, ref message)) if message == "feed the cat"
+        ));
+        assert_eq!(
+            parse("remind me to feed the cat in 35s").unwrap().title,
+            "Reminder: feed the cat"
+        );
     }
     #[test]
     fn invalid_timer_input_is_not_actionable() {
